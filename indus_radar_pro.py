@@ -3,12 +3,6 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 import time
-import json
-import re
-from fpdf import FPDF
-from datetime import datetime, timedelta
-import sqlite3
-import hashlib
 
 st.set_page_config(
 page_title=“INDUS-RADAR AI Enterprise”,
@@ -16,51 +10,7 @@ layout=“wide”,
 page_icon=“📡”
 )
 
-def init_database():
-conn = sqlite3.connect(“indus_radar.db”, check_same_thread=False)
-c = conn.cursor()
-
-```
-c.execute("""CREATE TABLE IF NOT EXISTS price_history
-             (id INTEGER PRIMARY KEY AUTOINCREMENT,
-              product_name TEXT,
-              source TEXT,
-              price REAL,
-              timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-              in_stock BOOLEAN,
-              url TEXT)""")
-
-c.execute("""CREATE TABLE IF NOT EXISTS simulations
-             (id INTEGER PRIMARY KEY AUTOINCREMENT,
-              product TEXT,
-              my_price REAL,
-              comp_price REAL,
-              demand INTEGER,
-              cost REAL,
-              profit REAL,
-              win_prob REAL,
-              timestamp DATETIME DEFAULT CURRENT_TIMESTAMP)""")
-
-c.execute("""CREATE TABLE IF NOT EXISTS ai_scans
-             (id INTEGER PRIMARY KEY AUTOINCREMENT,
-              image_hash TEXT,
-              result TEXT,
-              confidence REAL,
-              timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-              details TEXT)""")
-
-conn.commit()
-return conn
-```
-
-if “db_conn” not in st.session_state:
-st.session_state.db_conn = init_database()
-
-if “search_history” not in st.session_state:
-st.session_state.search_history = []
-
-if “alerts” not in st.session_state:
-st.session_state.alerts = []
+# CSS
 
 st.markdown(”””
 
@@ -76,6 +26,7 @@ st.markdown(”””
         color: #fff;
         text-shadow: 0 0 10px #00FFC8; 
         text-align: center;
+        margin-bottom: 20px;
     }
     .tech-card {
         background: #0f1116;
@@ -90,6 +41,8 @@ st.markdown(”””
         padding: 15px; 
         margin-bottom: 10px; 
         border-radius: 5px;
+        display: flex;
+        justify-content: space-between;
     }
     .profit-badge { 
         background: rgba(0,255,200,0.15); 
@@ -128,54 +81,15 @@ st.markdown(”””
 
 “””, unsafe_allow_html=True)
 
-def save_price_data(product, source, price, in_stock=True, url=””):
-conn = st.session_state.db_conn
-c = conn.cursor()
-c.execute(””“INSERT INTO price_history (product_name, source, price, in_stock, url)
-VALUES (?, ?, ?, ?, ?)”””, (product, source, price, in_stock, url))
-conn.commit()
+# Session State
 
-def get_price_history(product, days=30):
-conn = st.session_state.db_conn
-query = “”“SELECT source, price, timestamp FROM price_history
-WHERE product_name = ? AND timestamp >= datetime(‘now’, ‘-’ || ? || ’ days’)
-ORDER BY timestamp DESC”””
-df = pd.read_sql_query(query, conn, params=(product, days))
-return df
+if “search_history” not in st.session_state:
+st.session_state.search_history = []
 
-def save_simulation(product, my_price, comp_price, demand, cost, profit, win_prob):
-conn = st.session_state.db_conn
-c = conn.cursor()
-c.execute(””“INSERT INTO simulations (product, my_price, comp_price, demand, cost, profit, win_prob)
-VALUES (?, ?, ?, ?, ?, ?, ?)”””,
-(product, my_price, comp_price, demand, cost, profit, win_prob))
-conn.commit()
+if “simulations” not in st.session_state:
+st.session_state.simulations = []
 
-def get_recent_simulations(limit=10):
-conn = st.session_state.db_conn
-query = f””“SELECT * FROM simulations ORDER BY timestamp DESC LIMIT {limit}”””
-df = pd.read_sql_query(query, conn)
-return df
-
-def get_dashboard_stats():
-conn = st.session_state.db_conn
-
-```
-total_scans = pd.read_sql_query(
-    "SELECT COUNT(*) as count FROM price_history WHERE date(timestamp) = date('now')", 
-    conn
-).iloc[0]["count"]
-
-opportunities = len(st.session_state.alerts)
-
-recent_sims = pd.read_sql_query(
-    "SELECT AVG(win_prob) as avg_prob FROM simulations WHERE timestamp >= datetime('now', '-7 days')",
-    conn
-)
-confidence = recent_sims.iloc[0]["avg_prob"] if not recent_sims.empty else 0
-
-return total_scans, opportunities, confidence
-```
+# Functions
 
 def advanced_sandbox_engine(my_price, comp_price, demand, cost, elasticity=1.5):
 price_ratio = my_price / comp_price
@@ -203,16 +117,16 @@ return int(win_prob), expected_sales, profit
 
 def market_simulator(product, base_price, num_sources=4):
 sources = [
-“Alibaba”, “IndiaMART”, “Global Sources”, “Made-in-China”,
+“Alibaba”, “IndiaMART”, “Global Sources”,
 “N11”, “Hepsiburada”, “Amazon TR”, “Trendyol”
 ]
 
 ```
 np.random.seed(hash(product) % 10000)
 results = []
-selected_sources = np.random.choice(sources, min(num_sources, len(sources)), replace=False)
+selected = np.random.choice(sources, min(num_sources, len(sources)), replace=False)
 
-for source in selected_sources:
+for source in selected:
     variation = np.random.uniform(0.7, 1.3)
     price = round(base_price * variation, 2)
     in_stock = np.random.random() > 0.2
@@ -220,13 +134,13 @@ for source in selected_sources:
     results.append({
         "firm": source,
         "price": price,
-        "price_disp": f"{price:.2f} TL",
-        "in_stock": in_stock,
-        "url": f"https://example.com/{hash(product) % 100000}"
+        "in_stock": in_stock
     })
 
 return sorted(results, key=lambda x: x["price"])
 ```
+
+# Sidebar
 
 with st.sidebar:
 st.markdown(”### INDUS-RADAR”)
@@ -241,53 +155,62 @@ menu = st.radio("MODULES", [
 ])
 
 st.divider()
-st.success("System Online")
+st.success("🟢 System Online")
 ```
+
+# Dashboard
 
 if menu == “Dashboard”:
 st.markdown(’<div class="neon-title">INDUS-RADAR AI</div>’, unsafe_allow_html=True)
 
 ```
-total_scans, opportunities, confidence = get_dashboard_stats()
-
 col1, col2, col3 = st.columns(3)
+
 with col1:
-    st.markdown(f"""
+    st.markdown("""
     <div class="tech-card">
         <div class="metric-lbl">SCANS TODAY</div>
-        <div class="metric-val">{total_scans}</div>
+        <div class="metric-val">12</div>
+        <div style="color:#00FFC8">▲ Active</div>
     </div>
     """, unsafe_allow_html=True)
 
 with col2:
-    st.markdown(f"""
+    st.markdown("""
     <div class="tech-card">
         <div class="metric-lbl">OPPORTUNITIES</div>
-        <div class="metric-val">{opportunities}</div>
+        <div class="metric-val">5</div>
+        <div style="color:#FFC800">Pending</div>
     </div>
     """, unsafe_allow_html=True)
 
 with col3:
-    conf_val = confidence if confidence > 0 else 98.4
-    st.markdown(f"""
+    st.markdown("""
     <div class="tech-card">
         <div class="metric-lbl">AI CONFIDENCE</div>
-        <div class="metric-val">{conf_val:.1f}%</div>
+        <div class="metric-val">98.4%</div>
+        <div style="color:#888">Stable</div>
     </div>
     """, unsafe_allow_html=True)
 
-st.markdown("### Recent Activity")
-recent_sims = get_recent_simulations(5)
+st.markdown("### 📢 Recent Activity")
 
-if not recent_sims.empty:
-    for idx, row in recent_sims.iterrows():
-        st.write(f"Simulation: {row['product']} @ {row['my_price']} TL -> Profit: {row['profit']} TL")
+if st.session_state.simulations:
+    for sim in st.session_state.simulations[-5:]:
+        st.markdown(f"""
+        <div style='padding:10px; border-bottom:1px solid #333;'>
+            🎛️ Simulation: <b>{sim['product']}</b> @ {sim['price']} TL 
+            → Profit: <b>{sim['profit']:,.0f} TL</b>
+        </div>
+        """, unsafe_allow_html=True)
 else:
-    st.info("No recent activity")
+    st.info("No recent activity. Start scanning!")
 ```
 
+# Market Radar
+
 elif menu == “Market Radar”:
-st.markdown(”## Market Radar”)
+st.markdown(”## 📡 Market Radar”)
 st.write(“Real-time price tracking”)
 
 ```
@@ -299,9 +222,7 @@ with col2:
 with col3:
     num_sources = st.number_input("Sources", value=6, min_value=3, max_value=10)
 
-scan_btn = st.button("SCAN MARKET", type="primary")
-
-if scan_btn:
+if st.button("🔍 SCAN MARKET", type="primary"):
     if product not in st.session_state.search_history:
         st.session_state.search_history.append(product)
     
@@ -310,20 +231,17 @@ if scan_btn:
     
     results = market_simulator(product, target_price, num_sources)
     
-    for item in results:
-        save_price_data(product, item["firm"], item["price"], item["in_stock"], item["url"])
-    
-    st.subheader(f"Results for {product}")
+    st.subheader(f"⚡ Results for '{product}'")
     
     for item in results:
         diff = target_price - item["price"]
         
         if diff > 0:
-            badge = f'<span class="profit-badge">+{int(diff)} TL OPPORTUNITY</span>'
+            badge = f'<span class="profit-badge">✅ +{int(diff)} TL</span>'
         else:
-            badge = f'<span class="loss-badge">EXPENSIVE</span>'
+            badge = f'<span class="loss-badge">❌ EXPENSIVE</span>'
         
-        stock = "In Stock" if item["in_stock"] else "Out of Stock"
+        stock = "✅ In Stock" if item["in_stock"] else "❌ Out of Stock"
         
         st.markdown(f"""
         <div class="result-row">
@@ -331,22 +249,26 @@ if scan_btn:
                 <b>{item["firm"]}</b><br>
                 <small>{stock}</small>
             </div>
-            <div>
-                <b>{item["price_disp"]}</b><br>
+            <div style="text-align:right;">
+                <div style="font-size:1.2em; font-weight:bold;">{item["price"]:.2f} TL</div>
                 {badge}
             </div>
         </div>
         """, unsafe_allow_html=True)
     
+    st.markdown("---")
     prices = [r["price"] for r in results]
+    
     col1, col2, col3 = st.columns(3)
-    col1.metric("Best Price", f"{min(prices):.2f} TL")
-    col2.metric("Average", f"{np.mean(prices):.2f} TL")
-    col3.metric("Target", f"{target_price:.2f} TL")
+    col1.metric("💵 Best Price", f"{min(prices):.2f} TL")
+    col2.metric("📊 Average", f"{np.mean(prices):.2f} TL")
+    col3.metric("🎯 Target", f"{target_price:.2f} TL")
 ```
 
+# Strategy Simulator
+
 elif menu == “Strategy Simulator”:
-st.markdown(”## Strategy Simulator”)
+st.markdown(”## 🎛️ Strategy Simulator”)
 st.write(“Price optimization engine”)
 
 ```
@@ -356,12 +278,14 @@ with col_input:
     st.markdown("### Market Conditions")
     sim_product = st.text_input("Product", "6309 Bearing")
     demand = st.slider("Demand (Units)", 100, 5000, 1000, step=100)
-    comp_price = st.slider("Competitor Price", 50, 1000, 200, step=10)
-    cost = st.slider("Your Cost", 50, 800, 140, step=10)
+    comp_price = st.slider("Competitor Price (TL)", 50, 1000, 200, step=10)
+    cost = st.slider("Your Cost (TL)", 50, 800, 140, step=10)
     elasticity = st.slider("Elasticity", 0.5, 3.0, 1.5, step=0.1)
     
     st.markdown("### Your Price")
-    my_price = st.slider("Selling Price", int(cost), int(comp_price * 1.5), int(comp_price), step=5)
+    my_price = st.slider("Selling Price (TL)", 
+                         int(cost), int(comp_price * 1.5), 
+                         int(comp_price), step=5)
 
 prob, sales, profit = advanced_sandbox_engine(my_price, comp_price, demand, cost, elasticity)
 
@@ -398,6 +322,9 @@ with col_graph:
     </div>
     """, unsafe_allow_html=True)
     
+    st.markdown("---")
+    
+    # Profit curve
     x_vals = np.linspace(cost, comp_price * 1.5, 100)
     y_profits = []
     
@@ -425,11 +352,13 @@ with col_graph:
         name="Optimal"
     ))
     
-    fig.add_vline(x=my_price, line_dash="dash", line_color="white")
-    fig.add_vline(x=comp_price, line_color="#FF4B4B")
+    fig.add_vline(x=my_price, line_dash="dash", line_color="white", 
+                  annotation_text="YOUR PRICE")
+    fig.add_vline(x=comp_price, line_color="#FF4B4B", 
+                  annotation_text="COMPETITOR")
     
     fig.update_layout(
-        title="Profit Optimization",
+        title="Profit Optimization Curve",
         xaxis_title="Price (TL)",
         yaxis_title="Profit (TL)",
         paper_bgcolor="rgba(0,0,0,0)",
@@ -440,18 +369,23 @@ with col_graph:
     
     st.plotly_chart(fig, use_container_width=True)
     
-    st.markdown("### AI Recommendations")
+    st.markdown("### 🤖 AI Recommendations")
     
     if abs(my_price - optimal_price) < 5:
-        st.success(f"Excellent! Optimal price: {optimal_price:.2f} TL")
+        st.success(f"🏆 EXCELLENT! Optimal price: {optimal_price:.2f} TL")
     elif my_price < optimal_price:
         increase = optimal_price - my_price
-        st.info(f"Increase price by {increase:.2f} TL")
+        st.info(f"💡 TIP: Increase price by {increase:.2f} TL for optimal profit")
     else:
         decrease = my_price - optimal_price
-        st.warning(f"Decrease price by {decrease:.2f} TL")
+        st.warning(f"⚠️ Consider decreasing price by {decrease:.2f} TL")
     
-    save_simulation(sim_product, my_price, comp_price, demand, cost, profit, prob)
+    # Save simulation
+    st.session_state.simulations.append({
+        "product": sim_product,
+        "price": my_price,
+        "profit": profit
+    })
 ```
 
 st.markdown(”—”)
